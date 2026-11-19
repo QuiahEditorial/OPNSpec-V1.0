@@ -9,6 +9,8 @@ import matplotlib
 matplotlib.use("TkAgg")
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+import qrcode
+from PIL import ImageTk
 
 # ======================================================================================== ventana principal
 
@@ -231,6 +233,50 @@ casilla_monitor = tk.Text(frame_monitor, font=("Arial", 11), wrap=tk.WORD, yscro
 casilla_monitor.pack(side="left", fill="both", expand=True, padx=4, pady=4)
 scroll_monitor.config(command=casilla_monitor.yview)
 
+def mostrar_qr(contenido, titulo="Código QR"):
+    qr = qrcode.QRCode(version=1, error_correction=qrcode.constants.ERROR_CORRECT_M, box_size=10, border=4, )
+    qr.add_data(contenido)
+    qr.make(fit=True)
+
+    img = qr.make_image(fill_color="black", back_color="white").resize((300, 300))
+
+    # Ventana emergente
+    windoge = tk.Toplevel(root)
+    try:
+        windoge.iconphoto(False, tk.PhotoImage(file="Doge.png"))
+    except Exception:
+        pass
+
+    windoge.title(titulo)
+    windoge.resizable(False, False)
+    windoge.configure(bg="white")
+    windoge.transient(root)
+    windoge.grab_set()
+    
+    # Mostrar imagen
+    photo = ImageTk.PhotoImage(img)
+    lbl_img = tk.Label(windoge, image=photo, bg="white")
+    lbl_img.image = photo
+    lbl_img.pack(padx=20, pady=(20, 10))
+
+    # Texto del contenido (seleccionable)
+    lbl_contenido = tk.Label(windoge, text=contenido, bg="white", fg="#333", font=("Courier", 10), wraplength=280, justify="center")
+    lbl_contenido.pack(padx=20, pady=(0, 5))
+
+    # Botón para copiar al portapapeles
+    btn_copiar = tk.Button(windoge, text="📋 Copiar dirección", font=("Arial", 10, "bold"), bg="#3498db", fg="white",
+                           command=lambda: copiar_al_portapapeles(contenido, btn_copiar))
+    btn_copiar.pack(pady=5, padx=20, fill="x")
+
+    # Botón cerrar
+    tk.Button(windoge, text="Cerrar", command=windoge.destroy, font=("Arial", 10, "bold")).pack(pady=(5, 15), padx=20, fill="x")
+
+def copiar_al_portapapeles(texto, boton):
+    root.clipboard_clear()
+    root.clipboard_append(texto)
+    texto_original = boton.cget("text")
+    boton.config(text=" ¡ Gracias por tu apoyo, eres lo máximo ! ", bg="#2ecc71")
+
 # ======================================================================================== botones serial
 
 combo_puertos = ttk.Combobox(frame_puertos, state="readonly", width=25)
@@ -257,6 +303,9 @@ btn_save.pack(pady=2, padx=4, fill="x")
 
 btn_clear = tk.Button(frame_botones, text=" Limpiar ", width=17, anchor="w", font=("Arial", 10, "bold"), command=cmd_clear)
 btn_clear.pack(pady=2, padx=5, fill="x")
+
+btn_donar = tk.Button(frame_botones, text=" Donar ", width=17, anchor="w", font=("Arial", 10, "bold"), command=lambda: mostrar_qr(contenido="DA3Q9SGF7QYk8LQtSTxBTeKYRy3Jp9mJgt", titulo=" DOGE Coin :"))
+btn_donar.pack(pady=2, padx=4, fill="x")
 
 # ======================================================================================== ejecución de aplicación
 
