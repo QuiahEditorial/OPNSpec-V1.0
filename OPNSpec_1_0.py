@@ -13,6 +13,8 @@ import qrcode
 from PIL import ImageTk
 from datetime import datetime
 import os
+import time
+import webbrowser
 
 # ======================================================================================== ventana principal
 
@@ -130,10 +132,39 @@ def toggle_grabacion():
         return
     grabando = not grabando
     if grabando:
+        try:
+            intervalo = int(spin_intervalo.get())
+            if intervalo < 1 or intervalo > 600000:
+                raise ValueError
+        except ValueError:
+            messagebox.showerror("Error", "Intervalo = [1,600000]")
+            grabando = False
+            return
+    if grabando:
+        try:
+            prom = int(spin_prom.get())
+            if prom < 1 or prom > 1000:
+                raise ValueError
+        except ValueError:
+            messagebox.showerror("Error", "Observaciones = [1,1000]")
+            grabando = False
+            return
+    if grabando:
+        try:
+            prtadc = int(spin_portadc.get())
+            if prtadc < 32 or prtadc > 39:
+                raise ValueError
+        except ValueError:
+            messagebox.showerror("Error", "Intervalo = [34,39]")
+            grabando = False
+            return
         datos_x, datos_y = [], []            # Nuevo barrido: limpiamos la curva en vivo (no las cargadas)
         replot()
+        sndcmd(f"INTERVAL:{intervalo}")
+        sndcmd(f"PROMEDIO:{prom}")
+        sndcmd(f"PINADC:{prtadc}")
         sndcmd("START")
-        btn_play.config(text="⏹ Detener", bg="#d74c3c", activebackground="#c0392b" )
+        btn_play.config(text="⏹ Alto", bg="#d74c3c", activebackground="#c0392b" )
     else:
         sndcmd("STOP")
         btn_play.config(text="▶ Play", bg="#2ecc71", activebackground="#27ae60" )
@@ -151,8 +182,15 @@ def sndcmd(cmd):                                                                
 
 def procesar_linea(linea):
     if linea.startswith("#"):
-        casilla_comentarios.insert(tk.END, linea + " " + datetime.now().strftime('%Y_%m_%d-%H_%M_%S') + "\n")
-        casilla_comentarios.see(tk.END)
+        if "tem" in linea:
+            casilla_comentarios.insert(tk.END, linea + "\n")
+        elif "pem" in linea:
+            casilla_comentarios.insert(tk.END, linea + "\n")
+        elif "pad" in linea:
+            casilla_comentarios.insert(tk.END, linea + "\n")
+        else:
+            casilla_comentarios.insert(tk.END, linea + " " + datetime.now().strftime('%Y_%m_%d-%H_%M_%S') + "\n")
+            casilla_comentarios.see(tk.END)
         return
     try:
         partes = linea.replace(";", ",").split(",")
@@ -199,9 +237,16 @@ def mostrar_qr(contenido, titulo="Código QR"):
     lbl_contenido.pack(padx=20, pady=(0, 5))
 
     # Botón para copiar al portapapeles
-    btn_copiar = tk.Button(windoge, text="📋 Copiar dirección DOGE", font=("Arial", 10, "bold"), bg="#3498db", fg="white",
+    btn_copiar = tk.Button(windoge, text="📋 Copiar dirección DOGE", font=("Arial", 10, "bold"), bg="#bb9840", fg="white",
                            command=lambda: copiar_al_portapapeles(contenido, btn_copiar))
     btn_copiar.pack(pady=5, padx=20, fill="x")
+    
+    btn_APTC = tk.Button(windoge, text="Arduino Para el Trabajo Científico", font=("Arial", 10, "bold"), bg="#356565", fg="white",
+                           command=lambda: web_APTC())
+    btn_APTC.pack(pady=5, padx=20, fill="x")
+    
+    btn_TeX = tk.Button(windoge, text="El LaTeXnomicón", font=("Arial", 10, "bold"), bg="#000000", fg="white", command=lambda: web_TeX())
+    btn_TeX.pack(pady=5, padx=20, fill="x")
 
     # Botón cerrar
     tk.Button(windoge, text="Cerrar", command=windoge.destroy, font=("Arial", 10, "bold")).pack(pady=(5, 15), padx=20, fill="x")
@@ -211,6 +256,11 @@ def copiar_al_portapapeles(texto, boton):
     root.clipboard_append(texto)
     texto_original = boton.cget("text")
     boton.config(text=" ¡ Gracias por tu apoyo, eres lo máximo ! ", bg="#2ecc71")
+
+def web_APTC():
+    webbrowser.open("https://www.amazon.com.mx/dp/B0GJG5RVNJ")
+def web_TeX():
+    webbrowser.open("https://www.amazon.com.mx/dp/B0GJLMB43C")
 
 # ======================================================================================== guardar datos
 
@@ -339,7 +389,7 @@ def cmd_limpiar():
     datos_x, datos_y = [], []
     datos_x_orig, datos_y_orig = [], []
     curvas_cargadas = []
-    curvas_suavizadas = []
+#    curvas_suavizadas = []
     archivo_actual = None
     casilla_comentarios.delete("1.0", tk.END)
     casilla_datos.delete("1.0", tk.END)
@@ -353,14 +403,41 @@ frame_puertos.pack(fill="x", padx=(4,4), pady=(4, 2))
 frame_params = ttk.LabelFrame(root, text="Parámetros")
 frame_params.pack(fill="x", padx=(4,4), pady=(2,2))
 
-lbl_params = tk.Label(frame_params, text="Intervalo", font=("Arial", 10))
-lbl_params.pack(side="left", padx=(4, 2))
+lbl_intervalo = tk.Label(frame_params, text="Intervalo : ", font=("Arial", 10))
+lbl_intervalo.pack(side="left", padx=(4, 2))
 
 spin_intervalo = tk.Spinbox(frame_params, from_=1, to=60000, increment=500, width=10, font=("Arial", 10), justify="left")
 spin_intervalo.delete(0, tk.END)
-spin_intervalo.insert(0, "1000")
-spin_intervalo.pack(side="left", padx=(2,4))
-tk.Label(frame_params, text="ms", font=("Arial", 10)).pack(side="left", padx=(2,4))
+spin_intervalo.insert(0, "200")
+spin_intervalo.pack(side="left", padx=(4,4))
+tk.Label(frame_params, text="ms.", font=("Arial", 10)).pack(side="left", padx=(2,4))
+
+lbl_prom = tk.Label(frame_params, text="Promedio : ", font=("Arial", 10))
+lbl_prom.pack(side="left", padx=(4, 4))
+
+spin_prom = tk.Spinbox(frame_params, from_=1, to=1000, increment=100, width=10, font=("Arial", 10), justify="left")
+spin_prom.delete(0, tk.END)
+spin_prom.insert(0, "10")
+spin_prom.pack(side="left", padx=(4,4))
+tk.Label(frame_params, text="observaciones.", font=("Arial", 10)).pack(side="left", padx=(2,4))
+
+lbl_portadc = tk.Label(frame_params, text="Puerto ADC : ", font=("Arial", 10))
+lbl_portadc.pack(side="left", padx=(4, 4))
+
+spin_portadc = tk.Spinbox(frame_params, from_=32, to=39, increment=1, width=10, font=("Arial", 10), justify="left")
+spin_portadc.delete(0, tk.END)
+spin_portadc.insert(0, "34")
+spin_portadc.pack(side="left", padx=(4,4))
+tk.Label(frame_params, text=".", font=("Arial", 10)).pack(side="left", padx=(2,4))
+
+#lbl_portdac = tk.Label(frame_params, text="Puerto DAC : ", font=("Arial", 10))
+#lbl_portdac.pack(side="left", padx=(4, 4))
+
+#spin_portdac = tk.Spinbox(frame_params, from_=25, to=26, increment=1, width=10, font=("Arial", 10), justify="left")
+#spin_portdac.delete(0, tk.END)
+#spin_portdac.insert(0, "25")
+#spin_portdac.pack(side="left", padx=(4,4))
+#tk.Label(frame_params, text=".", font=("Arial", 10)).pack(side="left", padx=(2,4))
 
 main = tk.Frame(root, bg="#333333")
 main.pack(fill="both", expand=True, padx=(0,2), pady=(2,4))
@@ -430,7 +507,8 @@ lbl_estado.pack(side="right", padx=4)
 btn_play = tk.Button(frame_botones, text="▶ Play", bg="#2ecc71", activebackground="#27ae60", command=toggle_grabacion, state="disabled")
 btn_play.pack(pady=(4, 2), padx=4, fill="x")
 
-btn_dona = tk.Button(frame_botones, text=" Donar ", width=17, anchor="w", font=("Arial", 10, "bold"), command=lambda: mostrar_qr(contenido="DA3Q9SGF7QYk8LQtSTxBTeKYRy3Jp9mJgt", titulo=" DOGE Coin :"))
+btn_dona = tk.Button(frame_botones, text=" Ayudar ", width=17, anchor="w", font=("Arial", 10, "bold"),
+                     command=lambda: mostrar_qr(contenido="DA3Q9SGF7QYk8LQtSTxBTeKYRy3Jp9mJgt", titulo=" DOGE Coin :"),)
 btn_dona.pack(pady=2, padx=4, fill="x")
 
 btn_save = tk.Button(frame_botones, text=" Guardar ", width=17, anchor="w", font=("Arial", 10, "bold"), command=cmd_guardar)
