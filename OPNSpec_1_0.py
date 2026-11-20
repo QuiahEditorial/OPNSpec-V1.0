@@ -1,4 +1,4 @@
-# Interfaz V1.1
+# Interfaz V1.0
 
 import tkinter as tk
 import threading
@@ -155,14 +155,15 @@ def toggle_grabacion():
             if prtadc < 32 or prtadc > 39:
                 raise ValueError
         except ValueError:
-            messagebox.showerror("Error", "Intervalo = [34,39]")
+            messagebox.showerror("Error", "ADC = [32,39]")
             grabando = False
             return
-        datos_x, datos_y = [], []            # Nuevo barrido: limpiamos la curva en vivo (no las cargadas)
+        datos_x, datos_y = [], []
         replot()
         sndcmd(f"INTERVAL:{intervalo}")
         sndcmd(f"PROMEDIO:{prom}")
         sndcmd(f"PINADC:{prtadc}")
+#        sndcmd(f"PINDAC:{prtdac}")
         sndcmd("START")
         btn_play.config(text="⏹ Alto", bg="#d74c3c", activebackground="#c0392b" )
     else:
@@ -186,7 +187,7 @@ def procesar_linea(linea):
             casilla_comentarios.insert(tk.END, linea + "\n")
         elif "pem" in linea:
             casilla_comentarios.insert(tk.END, linea + "\n")
-        elif "pad" in linea:
+        elif "padc" in linea:
             casilla_comentarios.insert(tk.END, linea + "\n")
         else:
             casilla_comentarios.insert(tk.END, linea + " " + datetime.now().strftime('%Y_%m_%d-%H_%M_%S') + "\n")
@@ -424,20 +425,11 @@ tk.Label(frame_params, text="observaciones.", font=("Arial", 10)).pack(side="lef
 lbl_portadc = tk.Label(frame_params, text="Puerto ADC : ", font=("Arial", 10))
 lbl_portadc.pack(side="left", padx=(4, 4))
 
-spin_portadc = tk.Spinbox(frame_params, from_=32, to=39, increment=1, width=10, font=("Arial", 10), justify="left")
+spin_portadc = tk.Spinbox(frame_params, from_=34, to=39, increment=1, width=10, font=("Arial", 10), justify="left")
 spin_portadc.delete(0, tk.END)
 spin_portadc.insert(0, "34")
 spin_portadc.pack(side="left", padx=(4,4))
 tk.Label(frame_params, text=".", font=("Arial", 10)).pack(side="left", padx=(2,4))
-
-#lbl_portdac = tk.Label(frame_params, text="Puerto DAC : ", font=("Arial", 10))
-#lbl_portdac.pack(side="left", padx=(4, 4))
-
-#spin_portdac = tk.Spinbox(frame_params, from_=25, to=26, increment=1, width=10, font=("Arial", 10), justify="left")
-#spin_portdac.delete(0, tk.END)
-#spin_portdac.insert(0, "25")
-#spin_portdac.pack(side="left", padx=(4,4))
-#tk.Label(frame_params, text=".", font=("Arial", 10)).pack(side="left", padx=(2,4))
 
 main = tk.Frame(root, bg="#333333")
 main.pack(fill="both", expand=True, padx=(0,2), pady=(2,4))
