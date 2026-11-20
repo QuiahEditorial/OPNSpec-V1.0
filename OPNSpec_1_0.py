@@ -1,4 +1,4 @@
-# Interfaz V1.0
+# Interfaz V1.1
 
 import tkinter as tk
 import threading
@@ -11,11 +11,13 @@ from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import qrcode
 from PIL import ImageTk
+from datetime import datetime
+import os
 
 # ======================================================================================== ventana principal
 
 root = tk.Tk()
-root.title("OPN Spec")
+root.title("OPNSpec V1.0")
 root.geometry("1150x680")
 root.minsize(650, 625)
 root.configure(bg="#333333")
@@ -23,7 +25,7 @@ root.configure(bg="#333333")
 # ======================================================================================== icono de aplicación
 
 try:
-    root.iconphoto(False, tk.PhotoImage(file="logo.ico"))
+    root.iconphoto(False, tk.PhotoImage(file="Quiah.ico"))
 except Exception:
     pass
 
@@ -33,6 +35,11 @@ ser = None
 grabando = False
 datos_x = []
 datos_y = []
+archivo_actual = None
+datos_x_orig = []
+datos_y_orig = []
+curvas_cargadas = []
+PALETA = ["#e74c3c", "#3498db", "#9b59b6", "#f39c12", "#1abc9c", "#e67e22", "#2ecc71"]
 
 # ======================================================================================== conección serial
 
@@ -45,6 +52,7 @@ def list_ports():
         combo_puertos.set("Conecte ESP32")
 
 def conectar():
+    casilla_comentarios.insert(tk.END, "# Conectado" + " " + datetime.now().strftime('%Y_%m_%d-%H_%M_%S') + "\n")
     global ser
     puerto = combo_puertos.get()
     if not puerto:
@@ -82,36 +90,48 @@ def leer_serial():
             break
 
 def desconectar():
-    global ser
+    casilla_comentarios.insert(tk.END, "# Desconectado" + " " + datetime.now().strftime('%Y_%m_%d-%H_%M_%S') + "\n")
+    global ser, grabando
+    if grabando:
+        toggle_grabacion()
+    else:
+        pass
     if ser and ser.is_open:
-        try:
-            ser.write(b"STOP\n")                                 # Se envían los comandos a ESP32
-            ser.write(b"LED:OFF\n")
-        except Exception:
-            pass
         ser.close()
-    ser = None
     grabando = False
-    
+    ser = None
     lbl_estado.config(text=" 🛸 Desconectado", foreground="red", font=("Arial", 11 , "bold"))
     btn_conectar.config(state="normal")
     btn_desconectar.config(state="disabled")
-
+    btn_play.config(text="▶ Play", bg="#2ecc71", activebackground="#27ae60", state="disabled")
     btn_play.config(state="disabled")
+
+def desconexion_detectada():
+    global ser, grabando, led_encendido
+    if ser:
+        try:
+            ser.close()
+        except Exception:
+            pass
+    ser = None
+    grabando = False
+    led_encendido = False    
+    lbl_estado.config(text=" Desconectado (USB)", foreground="red")
+    btn_conectar.config(state="normal")
+    btn_desconectar.config(state="disabled")
+    btn_play.config(state="disabled", text="▶ Iniciar", bg="#2ecc71")
 
 # ======================================================================================== Obtención de datos
 
 def toggle_grabacion():
-    global grabando#, datos_x, datos_y, curvas_cargadas
+    global grabando
     if ser is None or not ser.is_open:
         messagebox.showwarning("Aviso", "Conecta ESP32.")
         return
-
     grabando = not grabando
     if grabando:
         datos_x, datos_y = [], []            # Nuevo barrido: limpiamos la curva en vivo (no las cargadas)
         replot()
-
         sndcmd("START")
         btn_play.config(text="⏹ Detener", bg="#d74c3c", activebackground="#c0392b" )
     else:
@@ -130,6 +150,10 @@ def sndcmd(cmd):                                                                
         messagebox.showwarning("Error", "Conecte ESP32.")
 
 def procesar_linea(linea):
+    if linea.startswith("#"):
+        casilla_comentarios.insert(tk.END, linea + " " + datetime.now().strftime('%Y_%m_%d-%H_%M_%S') + "\n")
+        casilla_comentarios.see(tk.END)
+        return
     try:
         partes = linea.replace(";", ",").split(",")
         x = float(partes[0])
@@ -138,100 +162,11 @@ def procesar_linea(linea):
         return
     datos_x.append(x)
     datos_y.append(y)
-    casilla_monitor.insert(tk.END, f"{x:8.3f}   {y:8.3f}\n")
-    casilla_monitor.see(tk.END)
+    casilla_datos.insert(tk.END, f"{x:8.3f}   {y:8.3f}\n")
+    casilla_datos.see(tk.END)
     replot()
 
-def replot():
-    ax.clear()
-    if datos_x and datos_y:
-        ax.plot(datos_x, datos_y, color="#2ecc71", linewidth=2, alpha=0.4, label="raw")
-    ax.set_xlabel("Tiempo (s)")
-    ax.set_ylabel("Voltaje (V)")
-    ax.set_title("Lectura actual")
-    ax.grid(True, linestyle="--", alpha=0.5, linewidth=2)
-    canvas.draw_idle()
-
-# ======================================================================================== guardar datos
-
-def cmd_guardar():
-    dat = casilla_monitor.get("1.0", tk.END).strip()
-    if not dat:
-        messagebox.showwarning("Aviso", "No hay datos para guardar.")
-        return
-    ruta = filedialog.asksaveasfilename(defaultextension=".dat", filetypes=[("Archivo de texto", "*.dat"), ("Todos", "*.*")])
-    if not ruta:
-        return
-    try:
-        with open(ruta, "w", encoding="utf-8") as f:
-            if dat:
-                for linea in dat.splitlines():
-                    f.write(f"{linea}\n")
-            else:
-                f.write("# (sin comentarios)\n")
-        messagebox.showinfo("Éxito", f"Archivo guardado en:\n{ruta}")
-    except Exception as e:
-        messagebox.showerror("Error", f"No se pudo guardar:\n{e}")
-
-def cmd_abrir():
-    global archivo_actual#, datos_x_orig, datos_y_orig
-    
-    ruta = filedialog.askopenfilename(filetypes=[("Archivo de texto", "*.txt"), ("Todos", "*.*")])
-    if not ruta:
-        return      
-    if not datos:
-        messagebox.showwarning("Aviso", "El archivo no contiene datos numéricos.")
-        return
-    nombre = os.path.basename(ruta)
-    archivo_actual = {"nombre": nombre, "ruta": ruta, "comentarios": comentarios, "x": [p[0] for p in datos], "y": [p[1] for p in datos]}
-
-    casilla_datos.delete("1.0", tk.END)
-    for x, y in datos:
-        casilla_datos.insert(tk.END, f"{x:8.3f}   {y:8.3f}\n")
-    graficar_archivo_cargado()    
-    messagebox.showinfo("Éxito", f"Archivo '{nombre}' cargado correctamente.")
-
-# ======================================================================================== limpiar
-
-def cmd_clear():
-    global datos_x, datos_y
-    datos_x, datos_y = [], []
-    casilla_monitor.delete("1.0", tk.END)
-    replot()
-
-# ======================================================================================== layout
-
-frame_puertos = ttk.LabelFrame(root, text="Puerto Serial")
-frame_puertos.pack(fill="x", padx=(5,5), pady=(5, 5))
-
-main = tk.Frame(root, bg="#333333")
-main.pack(fill="both", expand=True, padx=4, pady=4)
-
-frame_botones = ttk.LabelFrame(main, text="Botones Comando")
-frame_botones.pack(side="left", fill="both", expand=False, padx=4, pady=4)
-
-frame_plot = ttk.LabelFrame(main, text="Plots")
-frame_plot.pack(side="left", fill="both", expand=True, padx=(4,4), pady=(4,4))
-
-fig = Figure(figsize=(5, 4), dpi=100)
-ax = fig.add_subplot(111)
-ax.set_xlabel("Tiempo (s)", c="#333333")
-ax.set_ylabel("Voltaje (V)", c="#333333")
-ax.grid(True, linestyle="--", alpha=0.5, linewidth=1.5)
-
-canvas = FigureCanvasTkAgg(fig, master=frame_plot)
-canvas.get_tk_widget().pack(fill="both", expand=True, padx=4, pady=4)
-
-frame_monitor = ttk.LabelFrame(main, text="Monitor", width=200)
-frame_monitor.pack(side="right", fill="y", expand=False, padx=(4,4), pady=(4,4))
-frame_monitor.pack_propagate(False)
-
-scroll_monitor = tk.Scrollbar(frame_monitor)
-scroll_monitor.pack(side="right", fill="y", expand=False)
-
-casilla_monitor = tk.Text(frame_monitor, font=("Arial", 11), wrap=tk.WORD, yscrollcommand=scroll_monitor.set, bg="#eeeeee")
-casilla_monitor.pack(side="left", fill="both", expand=True, padx=4, pady=4)
-scroll_monitor.config(command=casilla_monitor.yview)
+# ======================================================================================== donar
 
 def mostrar_qr(contenido, titulo="Código QR"):
     qr = qrcode.QRCode(version=1, error_correction=qrcode.constants.ERROR_CORRECT_M, box_size=10, border=4, )
@@ -264,7 +199,7 @@ def mostrar_qr(contenido, titulo="Código QR"):
     lbl_contenido.pack(padx=20, pady=(0, 5))
 
     # Botón para copiar al portapapeles
-    btn_copiar = tk.Button(windoge, text="📋 Copiar dirección", font=("Arial", 10, "bold"), bg="#3498db", fg="white",
+    btn_copiar = tk.Button(windoge, text="📋 Copiar dirección DOGE", font=("Arial", 10, "bold"), bg="#3498db", fg="white",
                            command=lambda: copiar_al_portapapeles(contenido, btn_copiar))
     btn_copiar.pack(pady=5, padx=20, fill="x")
 
@@ -277,7 +212,204 @@ def copiar_al_portapapeles(texto, boton):
     texto_original = boton.cget("text")
     boton.config(text=" ¡ Gracias por tu apoyo, eres lo máximo ! ", bg="#2ecc71")
 
-# ======================================================================================== botones serial
+# ======================================================================================== guardar datos
+
+def cmd_guardar():
+    comentarios = casilla_comentarios.get("1.0", tk.END).strip()
+    datos_dat = casilla_datos.get("1.0", tk.END).strip()
+    if not datos_dat:
+        messagebox.showwarning("Aviso", "No hay datos para guardar.")
+        return
+    ruta = filedialog.asksaveasfilename(
+        defaultextension=".dat",
+        filetypes=[("Archivo de texto", "*.dat"), ("Todos", "*.*")],
+        initialfile=f"{datetime.now().strftime('%Y_%m_%d-%H_%M_%S')}.dat"
+    )
+    if not ruta:
+        return
+    try:
+        with open(ruta, "w", encoding="utf-8") as f:
+            f.write("# 🎁🎁🎁🎁\n#    OPNSpec   \n# 🚀🚀🚀🚀\n")
+            f.write(f"#📅 {datetime.now().strftime('%Y_%m_%d-%H_%M_%S')}\n")
+            f.write("# -------------------------------------------\n")
+            if comentarios:
+                for linea in comentarios.splitlines():
+                    f.write(f"# {linea}\n")
+            else:
+                f.write("# (sin comentarios)\n")
+            f.write("# -------------------------------------------\n")
+            f.write("# Tiempo(s)    Voltaje(V)\n")
+            f.write(datos_dat + "\n")
+        messagebox.showinfo("Éxito", f"Archivo guardado en:\n{ruta}")
+    except Exception as e:
+        messagebox.showerror("Error", f"No se pudo guardar:\n{e}")
+
+def cmd_abrir_espectro():
+    global archivo_actual, datos_x_orig, datos_y_orig
+    ruta = filedialog.askopenfilename(filetypes=[("Archivo de texto", "*.dat"), ("Todos", "*.*")])
+    if not ruta:
+        return
+    try:
+        comentarios, datos = leer_espectro(ruta)
+    except Exception as e:
+        messagebox.showerror("Error", f"No se pudo leer el archivo:\n{e}")
+        return
+    if not datos:
+        messagebox.showwarning("Aviso", "El archivo no contiene datos numéricos.")
+        return
+    nombre = os.path.basename(ruta)
+    archivo_actual = {
+        "nombre": nombre,
+        "ruta": ruta,
+        "comentarios": comentarios,
+        "x": [p[0] for p in datos],
+        "y": [p[1] for p in datos]
+    }
+    datos_x_orig = [p[0] for p in datos]
+    datos_y_orig = [p[1] for p in datos]
+    casilla_comentarios.delete("1.0", tk.END)
+    casilla_datos.delete("1.0", tk.END)
+    for x, y in datos:
+        casilla_datos.insert(tk.END, f"{x:8.3f}   {y:8.4f}\n")
+    casilla_comentarios.insert(tk.END, f"\n# 🪃 {nombre} \n")
+    for c in comentarios:
+        casilla_comentarios.insert(tk.END, f"# {c}\n")
+    casilla_comentarios.see(tk.END)
+    graficar_espectro_cargado()
+#    replot()
+    messagebox.showinfo("Éxito", f"Archivo '{nombre}' cargado.")
+
+def leer_espectro(ruta):
+    comentarios = []
+    datos = []
+    with open(ruta, "r", encoding="utf-8") as f:
+        for linea in f:
+            linea = linea.strip()
+            if not linea:
+                continue
+            if linea.startswith("#"):
+                comentarios.append(linea.lstrip("# ").rstrip())
+                continue
+            try:
+                #split() #sin argumentos divide por cualquier espacio en blanco
+                partes = linea.split()
+                if len(partes) >= 2:
+                    x = float(partes[0])
+                    y = float(partes[1])
+                    datos.append((x, y))
+            except (ValueError, IndexError):
+                continue
+    return comentarios, datos
+
+def graficar_espectro_cargado():
+    if archivo_actual is None:
+        messagebox.showwarning("Aviso", "Abre un archivo.")
+        return
+    if any(c["nombre"] == archivo_actual["nombre"] for c in curvas_cargadas):
+        messagebox.showinfo("Aviso", f"'{archivo_actual['nombre']}' ya está graficado.")
+        return
+    color = PALETA[len(curvas_cargadas) % len(PALETA)]
+    curvas_cargadas.append({"nombre": archivo_actual["nombre"], "x": archivo_actual["x"], "y": archivo_actual["y"], "color": color})
+    replot()
+
+# ======================================================================================== replot
+
+def replot():
+    ax.clear()
+    if datos_x and datos_y:
+        ax.plot(datos_x, datos_y, color="#2ecc71", linewidth=2, alpha=0.4, label="raw")
+    for c in curvas_cargadas:
+        ax.plot(c["x"], c["y"], color=c["color"], linewidth=2, label=c["nombre"])
+    ax.set_xlabel("Tiempo (s)")
+    ax.set_ylabel("Voltaje (V)")
+    ax.set_title("Lectura actual")
+    ax.grid(True, linestyle="--", alpha=0.5, linewidth=2)
+    canvas.draw_idle()
+
+# ======================================================================================== limpiar
+
+def cmd_limpiar():
+    global datos_x, datos_y, datos_x_orig, datos_y_orig, curvas_cargadas, archivo_actual    
+    hay_datos = (datos_x or datos_y or curvas_cargadas or curvas_suavizadas or archivo_actual)
+    if hay_datos:
+        confirmar = messagebox.askyesno("Limpiar", "¿Estás seguro de que quieres limpiar todo?\n\n",
+            icon=messagebox.WARNING, default=messagebox.NO)
+        if not confirmar:
+            return  # Usuario canceló
+    datos_x, datos_y = [], []
+    datos_x_orig, datos_y_orig = [], []
+    curvas_cargadas = []
+    curvas_suavizadas = []
+    archivo_actual = None
+    casilla_comentarios.delete("1.0", tk.END)
+    casilla_datos.delete("1.0", tk.END)
+    replot()
+
+# ======================================================================================== layout
+
+frame_puertos = ttk.LabelFrame(root, text="Puerto Serial")
+frame_puertos.pack(fill="x", padx=(4,4), pady=(4, 2))
+
+frame_params = ttk.LabelFrame(root, text="Parámetros")
+frame_params.pack(fill="x", padx=(4,4), pady=(2,2))
+
+lbl_params = tk.Label(frame_params, text="Intervalo", font=("Arial", 10))
+lbl_params.pack(side="left", padx=(4, 2))
+
+spin_intervalo = tk.Spinbox(frame_params, from_=1, to=60000, increment=500, width=10, font=("Arial", 10), justify="left")
+spin_intervalo.delete(0, tk.END)
+spin_intervalo.insert(0, "1000")
+spin_intervalo.pack(side="left", padx=(2,4))
+tk.Label(frame_params, text="ms", font=("Arial", 10)).pack(side="left", padx=(2,4))
+
+main = tk.Frame(root, bg="#333333")
+main.pack(fill="both", expand=True, padx=(0,2), pady=(2,4))
+
+frame_botones = ttk.LabelFrame(main, text="Botones Comando")
+frame_botones.pack(side="left", fill="both", expand=False, padx=(4,2), pady=(2,4))
+
+frame_plot = ttk.LabelFrame(main, text="Plots")
+frame_plot.pack(side="left", fill="both", expand=True, padx=(4,4), pady=(2,2))
+
+fig = Figure(figsize=(5, 4), dpi=100)
+ax = fig.add_subplot(111)
+ax.set_xlabel("Tiempo (s)", c="#333333")
+ax.set_ylabel("Voltaje (V)", c="#333333")
+ax.grid(True, linestyle="--", alpha=0.5, linewidth=1.5)
+
+canvas = FigureCanvasTkAgg(fig, master=frame_plot)
+canvas.get_tk_widget().pack(fill="both", expand=True, padx=4, pady=4)
+
+# monitor
+
+frame_monitor = tk.Frame(main, bg="#333333", width=300)
+frame_monitor.pack(side="right", fill="y", padx=(2, 4), pady=(2,4))
+frame_monitor.pack_propagate(False)
+
+marco_coment = ttk.LabelFrame(frame_monitor, text="Comentarios")
+marco_coment.pack(fill="both", expand=False, pady=(0, 2) )
+
+scroll_comentarios = tk.Scrollbar(marco_coment)
+scroll_comentarios.pack(side="right", fill="y")
+
+casilla_comentarios = tk.Text(marco_coment, font=("Arial", 11), wrap=tk.WORD, yscrollcommand=scroll_comentarios.set, bg="#eeeeee", width=34, height=10)
+casilla_comentarios.pack(side="left", fill="both", expand=True, padx=(2,4), pady=(2,0))
+scroll_comentarios.config(command=casilla_comentarios.yview)
+
+frame_datos = ttk.LabelFrame(frame_monitor, text="Datos (tiempo, voltaje)")          # Datos
+frame_datos.pack(fill="both", expand=True, padx=(0,0), pady=(2, 4))
+
+scroll_datos = tk.Scrollbar(frame_datos)
+scroll_datos.pack(side="right", fill="y")
+
+casilla_datos = tk.Text(frame_datos, font=("Courier New", 10), wrap="none", yscrollcommand=scroll_datos.set, bg="#dddddd", width=34, height=15)
+casilla_datos.pack(side="left", fill="both", expand=True, padx=4, pady=4)
+
+scroll_datos.config(command=casilla_datos.yview)
+
+# ======================================================================================== botones
+
+# serial
 
 combo_puertos = ttk.Combobox(frame_puertos, state="readonly", width=25)
 combo_puertos.pack(side="left", padx=4, pady=4)
@@ -293,19 +425,22 @@ btn_desconectar.pack(side="left", padx=4)
 lbl_estado = ttk.Label(frame_puertos, text=" 🛸 Desconectado", font=("Arial", 11 , "bold"), foreground="red" )
 lbl_estado.pack(side="right", padx=4)
 
-# ======================================================================================== botones medición
+# medición
 
 btn_play = tk.Button(frame_botones, text="▶ Play", bg="#2ecc71", activebackground="#27ae60", command=toggle_grabacion, state="disabled")
 btn_play.pack(pady=(4, 2), padx=4, fill="x")
 
+btn_dona = tk.Button(frame_botones, text=" Donar ", width=17, anchor="w", font=("Arial", 10, "bold"), command=lambda: mostrar_qr(contenido="DA3Q9SGF7QYk8LQtSTxBTeKYRy3Jp9mJgt", titulo=" DOGE Coin :"))
+btn_dona.pack(pady=2, padx=4, fill="x")
+
 btn_save = tk.Button(frame_botones, text=" Guardar ", width=17, anchor="w", font=("Arial", 10, "bold"), command=cmd_guardar)
 btn_save.pack(pady=2, padx=4, fill="x")
 
-btn_clear = tk.Button(frame_botones, text=" Limpiar ", width=17, anchor="w", font=("Arial", 10, "bold"), command=cmd_clear)
-btn_clear.pack(pady=2, padx=5, fill="x")
+btn_open = tk.Button(frame_botones, text=" Abrir ", width=17, anchor="w", font=("Arial", 10, "bold"), command=cmd_abrir_espectro)
+btn_open.pack(pady=2, padx=4, fill="x")
 
-btn_donar = tk.Button(frame_botones, text=" Donar ", width=17, anchor="w", font=("Arial", 10, "bold"), command=lambda: mostrar_qr(contenido="DA3Q9SGF7QYk8LQtSTxBTeKYRy3Jp9mJgt", titulo=" DOGE Coin :"))
-btn_donar.pack(pady=2, padx=4, fill="x")
+btn_clea = tk.Button(frame_botones, text=" Limpiar ", width=17, anchor="w", font=("Arial", 10, "bold"), command=cmd_limpiar)
+btn_clea.pack(pady=2, padx=5, fill="x")
 
 # ======================================================================================== ejecución de aplicación
 
