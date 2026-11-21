@@ -1,4 +1,4 @@
-# Interfaz V1.0
+# Interfaz V 1.3
 
 import tkinter as tk
 import threading
@@ -158,12 +158,31 @@ def toggle_grabacion():
             messagebox.showerror("Error", "ADC = [32,39]")
             grabando = False
             return
+    if grabando:
+        try:
+            prtdac = int(spin_portdac.get())
+            if prtdac < 25 or prtdac > 26:
+                raise ValueError
+        except ValueError:
+            messagebox.showerror("Error", "DAC = [25,26]")
+            grabando = False
+            return
+    if grabando:
+        try:
+            potdac = int(spin_powdac.get())
+            if potdac < 0 or potdac > 255:
+                raise ValueError
+        except ValueError:
+            messagebox.showerror("Error", "Pot.DAC = [0,255]")
+            grabando = False
+            return
         datos_x, datos_y = [], []
         replot()
         sndcmd(f"INTERVAL:{intervalo}")
         sndcmd(f"PROMEDIO:{prom}")
         sndcmd(f"PINADC:{prtadc}")
-#        sndcmd(f"PINDAC:{prtdac}")
+        sndcmd(f"PINDAC:{prtdac}")
+        sndcmd(f"VOLDAC:{potdac}")
         sndcmd("START")
         btn_play.config(text="⏹ Alto", bg="#d74c3c", activebackground="#c0392b" )
     else:
@@ -183,11 +202,15 @@ def sndcmd(cmd):                                                                
 
 def procesar_linea(linea):
     if linea.startswith("#"):
-        if "tem" in linea:
+        if   "tem" in linea:
             casilla_comentarios.insert(tk.END, linea + "\n")
         elif "pem" in linea:
             casilla_comentarios.insert(tk.END, linea + "\n")
         elif "padc" in linea:
+            casilla_comentarios.insert(tk.END, linea + "\n")
+        elif "pdac" in linea:
+            casilla_comentarios.insert(tk.END, linea + "\n")
+        elif "potdac" in linea:
             casilla_comentarios.insert(tk.END, linea + "\n")
         else:
             casilla_comentarios.insert(tk.END, linea + " " + datetime.now().strftime('%Y_%m_%d-%H_%M_%S') + "\n")
@@ -407,7 +430,7 @@ frame_params.pack(fill="x", padx=(4,4), pady=(2,2))
 lbl_intervalo = tk.Label(frame_params, text="Intervalo : ", font=("Arial", 10))
 lbl_intervalo.pack(side="left", padx=(4, 2))
 
-spin_intervalo = tk.Spinbox(frame_params, from_=1, to=60000, increment=500, width=10, font=("Arial", 10), justify="left")
+spin_intervalo = tk.Spinbox(frame_params, from_=1, to=60000, increment=500, width=5, font=("Arial", 10), justify="left")
 spin_intervalo.delete(0, tk.END)
 spin_intervalo.insert(0, "200")
 spin_intervalo.pack(side="left", padx=(4,4))
@@ -416,20 +439,38 @@ tk.Label(frame_params, text="ms.", font=("Arial", 10)).pack(side="left", padx=(2
 lbl_prom = tk.Label(frame_params, text="Promedio : ", font=("Arial", 10))
 lbl_prom.pack(side="left", padx=(4, 4))
 
-spin_prom = tk.Spinbox(frame_params, from_=1, to=1000, increment=100, width=10, font=("Arial", 10), justify="left")
+spin_prom = tk.Spinbox(frame_params, from_=1, to=1000, increment=100, width=4, font=("Arial", 10), justify="left")
 spin_prom.delete(0, tk.END)
 spin_prom.insert(0, "10")
 spin_prom.pack(side="left", padx=(4,4))
-tk.Label(frame_params, text="observaciones.", font=("Arial", 10)).pack(side="left", padx=(2,4))
+tk.Label(frame_params, text="Observaciones.", font=("Arial", 10)).pack(side="left", padx=(2,4))
 
-lbl_portadc = tk.Label(frame_params, text="Puerto ADC : ", font=("Arial", 10))
+lbl_portadc = tk.Label(frame_params, text="Prt.ADC : ", font=("Arial", 10))
 lbl_portadc.pack(side="left", padx=(4, 4))
 
-spin_portadc = tk.Spinbox(frame_params, from_=34, to=39, increment=1, width=10, font=("Arial", 10), justify="left")
+spin_portadc = tk.Spinbox(frame_params, from_=34, to=39, increment=1, width=4, font=("Arial", 10), justify="left")
 spin_portadc.delete(0, tk.END)
 spin_portadc.insert(0, "34")
 spin_portadc.pack(side="left", padx=(4,4))
 tk.Label(frame_params, text=".", font=("Arial", 10)).pack(side="left", padx=(2,4))
+
+lbl_portdac = tk.Label(frame_params, text="Prt.DAC : ", font=("Arial", 10))
+lbl_portdac.pack(side="left", padx=(4, 4))
+
+spin_portdac = tk.Spinbox(frame_params, from_=25, to=26, increment=1, width=4, font=("Arial", 10), justify="left")
+spin_portdac.delete(0, tk.END)
+spin_portdac.insert(0, "25")
+spin_portdac.pack(side="left", padx=(4,4))
+tk.Label(frame_params, text=".", font=("Arial", 10)).pack(side="left", padx=(2,4))
+
+lbl_powdac = tk.Label(frame_params, text="I.DAC : ", font=("Arial", 10))
+lbl_powdac.pack(side="left", padx=(4, 4))
+
+spin_powdac = tk.Spinbox(frame_params, from_=0, to=255, increment=1, width=4, font=("Arial", 10), justify="left")
+spin_powdac.delete(0, tk.END)
+spin_powdac.insert(0, "0")
+spin_powdac.pack(side="left", padx=(4,4))
+tk.Label(frame_params, text="bits", font=("Arial", 10)).pack(side="left", padx=(2,4))
 
 main = tk.Frame(root, bg="#333333")
 main.pack(fill="both", expand=True, padx=(0,2), pady=(2,4))
@@ -496,7 +537,7 @@ lbl_estado.pack(side="right", padx=4)
 
 # medición
 
-btn_play = tk.Button(frame_botones, text="▶ Play", bg="#2ecc71", activebackground="#27ae60", command=toggle_grabacion, state="disabled")
+btn_play = tk.Button(frame_botones, text=" ▶ Play ", bg="#2ecc71", activebackground="#27ae60", command=toggle_grabacion, state="disabled")
 btn_play.pack(pady=(4, 2), padx=4, fill="x")
 
 btn_dona = tk.Button(frame_botones, text=" Ayudar ", width=17, anchor="w", font=("Arial", 10, "bold"),
@@ -512,6 +553,8 @@ btn_open.pack(pady=2, padx=4, fill="x")
 btn_clea = tk.Button(frame_botones, text=" Limpiar ", width=17, anchor="w", font=("Arial", 10, "bold"), command=cmd_limpiar)
 btn_clea.pack(pady=2, padx=5, fill="x")
 
+btn_suavizado = tk.Menubutton(frame_botones, text=" Filtros ", width=17, anchor="w", font=("Arial", 10, "bold"), bg="#ecf0f1", relief="raised")
+btn_suavizado.pack(pady=2, padx=5, fill="x")
 # ======================================================================================== ejecución de aplicación
 
 list_ports()
