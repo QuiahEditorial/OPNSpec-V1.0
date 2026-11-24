@@ -1,4 +1,4 @@
-# Interfaz V1.0
+# Interfaz V1.4
 
 import tkinter as tk
 import threading
@@ -20,6 +20,21 @@ import statistics
 #from scipy.signal import savitzky_golay
 from scipy.signal import savgol_filter
 
+
+import sys
+import os
+
+def get_resource_path(relative_path):
+    """Obtiene la ruta absoluta al recurso, funciona en desarrollo y en exe."""
+    if getattr(sys, 'frozen', False):
+        # Si estamos en el ejecutable
+        base_path = sys._MEIPASS
+    else:
+        # Si estamos en desarrollo
+        base_path = os.path.abspath(".")
+    
+    return os.path.join(base_path, relative_path)
+
 # ======================================================================================== ventana principal
 
 root = tk.Tk()
@@ -31,9 +46,11 @@ root.configure(bg="#333333")
 # ======================================================================================== icono de aplicación
 
 try:
-    root.iconphoto(False, tk.PhotoImage(file="Quiah.ico"))
+    icon_path = get_resource_path("Quiah.png")
+    root.iconphoto(False, tk.PhotoImage(file=resource_path("Quiah.ico")))
 except Exception:
     pass
+
 
 # ======================================================================================== variables globales
 
@@ -805,7 +822,6 @@ def cmd_estadisticos():
     error_std = desv_std / (n ** 0.5) if n > 0 else 0
     
     duracion = x[-1] - x[0] if len(x) > 1 else 0
-    frecuencia = 1 / intervalo_prom if intervalo_prom > 0 else 0
     
     nombre_archivo = archivo_actual["nombre"] if archivo_actual else "Medición en vivo"
     
@@ -840,7 +856,6 @@ def cmd_estadisticos():
 
 #   TIEMPO
 #   Duración total:  {duracion:.3f} s
-#   Frecuencia:      {frecuencia:.2f} Hz
 # ════════════
 """
     
