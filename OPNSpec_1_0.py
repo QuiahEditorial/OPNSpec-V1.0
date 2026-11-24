@@ -1,4 +1,4 @@
-# Interfaz V1.4
+# Interfaz V1.0
 
 import tkinter as tk
 import threading
@@ -24,7 +24,7 @@ from scipy.signal import savgol_filter
 
 root = tk.Tk()
 root.title("OPNSpec V1.3")
-root.geometry("1116x690")
+root.geometry("1238x765")
 root.minsize(650, 625)
 root.configure(bg="#333333")
 
@@ -61,7 +61,18 @@ tipos_grafico = [
     ("Línea + marcadores", "line_markers"),
     ("Histograma", "hist"),  # 👈 NUEVO
 ]
-
+tipo_ajuste = [
+    "Ninguno",
+    "Lineal",
+    "Cuadrático",
+    "Cúbico",
+    "Polinomial (grado 4)",
+    "Polinomial (grado 5)",
+    "Exponencial",
+    "Logarítmico",
+    "Potencia"
+]
+curva_ajuste = None
 # ======================================================================================== conección serial
 
 def list_ports():
@@ -443,6 +454,10 @@ def replot():
     for c in curvas_suavizadas:
         plot_data(c["x"], c["y"], c["color"], c["nombre"], linewidth=1.0, linestyle="--", alpha=0.5)
 
+    if curva_ajuste:
+        ax.plot(curva_ajuste["x"], curva_ajuste["y"], color="#e74c3c", linewidth=0.75, linestyle="-", alpha=0.75,
+                label=f"Ajuste: {curva_ajuste['tipo']} (R²={curva_ajuste['r_squared']:.3f})")
+    
     if tipo_grafico == "hist":
         ax.set_xlabel("Voltaje (V)")
         ax.set_ylabel("Frecuencia")
@@ -454,7 +469,7 @@ def replot():
 
     ax.grid(True, linestyle="--", alpha=0.5)
 
-    if datos_x or curvas_cargadas or curvas_suavizadas:
+    if datos_x or curvas_cargadas or curvas_suavizadas or curva_ajuste:
         ax.legend(loc="upper left", fontsize=7)
 
     canvas.draw_idle()
@@ -462,8 +477,8 @@ def replot():
 # ======================================================================================== limpiar
 
 def cmd_limpiar():
-    global datos_x, datos_y, datos_x_orig, datos_y_orig, curvas_cargadas, archivo_actual, curvas_suavizadas    
-    hay_datos = (datos_x or datos_y or curvas_cargadas or curvas_suavizadas or archivo_actual)
+    global datos_x, datos_y, datos_x_orig, datos_y_orig, curvas_cargadas, archivo_actual, curvas_suavizadas, curva_ajuste   
+    hay_datos = (datos_x or datos_y or curvas_cargadas or curvas_suavizadas or archivo_actual or curva_ajuste)
     if hay_datos:
         confirmar = messagebox.askyesno("Limpiar", "¿Estás seguro de que quieres limpiar todo?\n\n",
             icon=messagebox.WARNING, default=messagebox.NO)
@@ -476,6 +491,8 @@ def cmd_limpiar():
     curvas_cargadas = []
     filtro = ["Ninguno"]    
     curvas_suavizadas = []
+    curva_ajuste = None
+    combo_ajuste.set("Ninguno")
     casilla_comentarios.delete("1.0", tk.END)
     casilla_datos.delete("1.0", tk.END)
     tipo_grafico = "line"
@@ -834,6 +851,150 @@ def cmd_estadisticos():
     messagebox.showinfo("Análisis completo", 
         f"Estadísticos calculados para {n} puntos.\n"
         f"Revisa la casilla de comentarios.")
+
+# ======================================================================================== ajuste
+
+def ajustar_curva():
+    """Ajusta los datos según el tipo seleccionado y muestra parámetros."""
+    global curva_ajuste  # 👈 AQUÍ, al inicio de la función
+    
+    if not datos_x_orig or not datos_y_orig:
+        messagebox.showwarning("Aviso", 
+            "No hay datos para ajustar.\nPrimero mide o carga un archivo.")
+        return
+    
+    tipo = combo_ajuste.get()
+    
+    if tipo == "Ninguno":
+        curva_ajuste = None  # 👈 Ya no necesitas "global" aquí
+        return
+    
+    x = np.array(datos_x_orig)
+    y = np.array(datos_y_orig)
+    
+    try:
+        if tipo == "Lineal":
+            # y = mx + b
+            coef = np.polyfit(x, y, 1)
+            m, b = coef
+            y_ajustado = m * x + b
+            params = f"y = {m:.6f}x + {b:.6f}"
+            
+        elif tipo == "Cuadrático":
+            # y = ax² + bx + c
+            coef = np.polyfit(x, y, 2)
+            a, b, c = coef
+            y_ajustado = a * x**2 + b * x + c
+            params = f"y = {a:.6f}x² + {b:.6f}x + {c:.6f}"
+            
+        elif tipo == "Cúbico":
+            # y = ax³ + bx² + cx + d
+            coef = np.polyfit(x, y, 3)
+            a, b, c, d = coef
+            y_ajustado = a * x**3 + b * x**2 + c * x + d
+            params = f"y = {a:.6f}x³ + {b:.6f}x² + {c:.6f}x + {d:.6f}"
+            
+        elif tipo == "Polinomial (grado 4)":
+            coef = np.polyfit(x, y, 4)
+            y_ajustado = np.polyval(coef, x)
+            params = "Polinomio grado 4 (coeficientes en comentarios)"
+            
+        elif tipo == "Polinomial (grado 5)":
+            coef = np.polyfit(x, y, 5)
+            y_ajustado = np.polyval(coef, x)
+            params = "Polinomio grado 5 (coeficientes en comentarios)"
+            
+        elif tipo == "Exponencial":
+            # y = a * e^(bx)
+            # Linealizar: ln(y) = ln(a) + bx
+            if np.any(y <= 0):
+                messagebox.showerror("Error", 
+                    "El ajuste exponencial requiere valores positivos.")
+                return
+            coef = np.polyfit(x, np.log(y), 1)
+            b, ln_a = coef
+            a = np.exp(ln_a)
+            y_ajustado = a * np.exp(b * x)
+            params = f"y = {a:.6f} · e^({b:.6f}x)"
+            
+        elif tipo == "Logarítmico":
+            # y = a * ln(x) + b
+            if np.any(x <= 0):
+                messagebox.showerror("Error", 
+                    "El ajuste logarítmico requiere x > 0.")
+                return
+            coef = np.polyfit(np.log(x), y, 1)
+            a, b = coef
+            y_ajustado = a * np.log(x) + b
+            params = f"y = {a:.6f} · ln(x) + {b:.6f}"
+            
+        elif tipo == "Potencia":
+            # y = a * x^b
+            # Linealizar: ln(y) = ln(a) + b·ln(x)
+            if np.any(x <= 0) or np.any(y <= 0):
+                messagebox.showerror("Error", 
+                    "El ajuste de potencia requiere x > 0 y y > 0.")
+                return
+            coef = np.polyfit(np.log(x), np.log(y), 1)
+            b, ln_a = coef
+            a = np.exp(ln_a)
+            y_ajustado = a * x**b
+            params = f"y = {a:.6f} · x^({b:.6f})"
+        
+        # Calcular R² (coeficiente de determinación)
+        ss_res = np.sum((y - y_ajustado)**2)
+        ss_tot = np.sum((y - np.mean(y))**2)
+        r_squared = 1 - (ss_res / ss_tot) if ss_tot > 0 else 0
+
+        curva_ajuste = {
+            "x": x,
+            "y": y_ajustado,
+            "tipo": tipo,
+            "params": params,
+            "r_squared": float(r_squared)}
+        
+        # Mostrar en comentarios
+        nombre_archivo = archivo_actual["nombre"] if archivo_actual else "Medición en vivo"
+        
+        reporte = f"""
+# ═══════════════════════════════════════════
+# 📈 AJUSTE DE CURVA
+# ═══════════════════════════════════════════
+# Archivo: {nombre_archivo}
+# Tipo: {tipo}
+# Ecuación: {params}
+# R²: {r_squared:.6f}
+# ═══════════════════════════════════════════
+"""
+        
+        # Para polinomios de grado alto, mostrar coeficientes
+        if "Polinomial" in tipo:
+            grado = 4 if "grado 4" in tipo else 5
+            coef = np.polyfit(x, y, grado)
+            reporte += "# Coeficientes:\n"
+            for i, c in enumerate(coef[::-1]):
+                reporte += f"#   a{i} = {c:.6f}\n"
+            reporte += "# ═══════════════════════════════════════════\n"
+        
+        casilla_comentarios.insert(tk.END, reporte)
+        casilla_comentarios.see(tk.END)
+        
+        replot()
+        
+    except Exception as e:
+        messagebox.showerror("Error", f"No se pudo ajustar la curva:\n{e}")
+
+def cmd_quitar_ajuste():
+    global curva_ajuste
+    if curva_ajuste is None:
+        messagebox.showinfo("Aviso", "No hay curva de ajuste que quitar.")
+        return
+    tipo_eliminado = curva_ajuste["tipo"]
+    curva_ajuste = None
+    combo_ajuste.set("Ninguno")
+    replot()
+    messagebox.showinfo("Listo", f"Se quitó el ajuste: {tipo_eliminado}")
+
 # ======================================================================================== layout
 
 frame_puertos = ttk.LabelFrame(root, text="Puerto Serial")
@@ -845,7 +1006,7 @@ frame_params.pack(fill="x", padx=(4,4), pady=(2,2))
 main = tk.Frame(root, bg="#333333")
 main.pack(fill="both", expand=True, padx=(2,2), pady=(2,4))
 
-frame_botones = ttk.LabelFrame(main, width=100) #, text="Obervaciones"
+frame_botones = ttk.LabelFrame(main, width=100, text="Comandos")
 frame_botones.pack(side="left", fill="both", expand=False, padx=(2,2), pady=(2,2))
 
 frame_btncmd = ttk.LabelFrame(frame_botones, text="Observar")
@@ -881,6 +1042,12 @@ frame_datos.pack(fill="both", expand=True, padx=(0,0), pady=(2, 4))
 
 frame_stats = ttk.LabelFrame(frame_botones, text="Estadísticos")
 frame_stats.pack(side="top", fill="both", expand=False, padx=(4,4), pady=(4,2))
+
+frame_fit = ttk.LabelFrame(frame_botones, text="Ajuste")
+frame_fit.pack(side="top", fill="both", expand=False, padx=(4,4), pady=(4,2))
+
+frame_clean = ttk.LabelFrame(frame_botones, text="Limpiar")
+frame_clean.pack(side="top", fill="both", expand=False, padx=(4,4), pady=(4,2))
 
 # ======================================================================================== botones serial
 
@@ -948,10 +1115,10 @@ spin_powdac.insert(0, "0")
 spin_powdac.pack(side="left", padx=(4,4))
 tk.Label(frame_params, text="bits", font=("Arial", 10)).pack(side="left", padx=(2,4))
 
-btn_mas = tk.Button(frame_params, text="A+", command=aumentar_fuente, width=15, height=1)
+btn_mas = tk.Button(frame_params, text="A+", command=aumentar_fuente, width=4, height=1)
 btn_mas.pack(pady=(4, 4), padx=(5,5), side="right")
 
-btn_menos = tk.Button(frame_params, text="A-", command=disminuir_fuente, width=15, height=1)
+btn_menos = tk.Button(frame_params, text="A-", command=disminuir_fuente, width=4, height=1)
 btn_menos.pack(pady=(4, 4), padx=(5,5), side="right")
 
 root.bind("<Control-plus>", lambda e: aumentar_fuente())                                  # Atajos de teclado
@@ -962,14 +1129,14 @@ root.bind("<Control-minus>", lambda e: disminuir_fuente())
 btn_play = tk.Button(frame_btncmd, text="▶ Play", bg="#2ecc71", activebackground="#27ae60", command=toggle_grabacion, state="disabled")
 btn_play.pack(padx=(4,2), pady=(4,2), fill="x")
 
-btn_dona = tk.Button(frame_btncmd, text=" Ayudar ", width=17, anchor="w", font=("Arial", 10, "bold"),
+btn_dona = tk.Button(frame_btncmd, text=" Ayudar ", width=12, anchor="w", font=("Arial", 10, "bold"),
                      command=lambda: mostrar_qr(contenido="DA3Q9SGF7QYk8LQtSTxBTeKYRy3Jp9mJgt", titulo=" DOGE Coin :"),)
 btn_dona.pack(padx=(4,2), pady=(2,2), fill="x")
 
-btn_save = tk.Button(frame_btncmd, text=" Guardar ", width=17, anchor="w", font=("Arial", 10, "bold"), command=cmd_guardar)
+btn_save = tk.Button(frame_btncmd, text=" Guardar ", width=12, anchor="w", font=("Arial", 10, "bold"), command=cmd_guardar)
 btn_save.pack(padx=(4,2), pady=(2,2), fill="x")
 
-btn_open = tk.Button(frame_btncmd, text=" Abrir ", width=17, anchor="w", font=("Arial", 10, "bold"), command=cmd_abrir_espectro)
+btn_open = tk.Button(frame_btncmd, text=" Abrir ", width=12, anchor="w", font=("Arial", 10, "bold"), command=cmd_abrir_espectro)
 btn_open.pack(padx=(4,2), pady=(2,2), fill="x")
 
 nombres_grafico = [nombre for nombre, _ in tipos_grafico]
@@ -980,12 +1147,12 @@ combo_tiplot.pack(side="top", fill="x", pady=5, padx=5)
 btn_applot = tk.Button(frame_btncmd, text="Aplicar plot", command=aplicarplot, state="normal") #activebackground="white", 
 btn_applot.pack(pady=(4, 4), padx=(5,5), fill="x")
 
-btn_clea = tk.Button(frame_btncmd, text=" Limpiar ", width=17, anchor="w", font=("Arial", 10, "bold"), command=cmd_limpiar)
-btn_clea.pack(padx=(4,2), pady=(2,2), fill="x")
+#btn_clea = tk.Button(frame_btncmd, text=" Limpiar ", width=12, anchor="w", font=("Arial", 10, "bold"), command=cmd_limpiar)
+#btn_clea.pack(padx=(4,2), pady=(2,2), fill="x")
 
 # ======================================================================================== botones filtro
 
-lbl_archivo_actual = tk.Label(frame_file, text="🤖", bg="#34495e", fg="#ecf0f1", font=("Arial", 16), wraplength=150, justify="left")
+lbl_archivo_actual = tk.Label(frame_file, text="🤖", bg="#333333", fg="#ecf0f1", font=("Arial", 16), wraplength=150, justify="left")
 lbl_archivo_actual.pack(padx=(5,1), pady=(1, 1), fill="x")
 
 combo_filtros = ttk.Combobox(frame_wincomb, values=filtros, state="readonly", font=("Arial", 10))
@@ -1007,16 +1174,48 @@ spin_orden.pack(side="right", padx=(5, 1), pady=(1,1), fill="x")
 btn_apfiltro = tk.Button(frame_filtro, text="Aplicar", command=aplicar, state="normal") #activebackground="white", 
 btn_apfiltro.pack(padx=(5,1), pady=(1,1), fill="x")
 
-btn_quitar_suav = tk.Button(frame_filtro, text="Quitar suavizado", width=17, anchor="w", font=("Arial", 10), command=cmd_quitar_ultimo_suavizado)
-btn_quitar_suav.pack(padx=(5,1), pady=(4,4), fill="x")
+#btn_quitar_suav = tk.Button(frame_filtro, text="Quitar suavizado", width=12, anchor="w", font=("Arial", 10), command=cmd_quitar_ultimo_suavizado)
+#btn_quitar_suav.pack(padx=(5,1), pady=(4,4), fill="x")
 
-btn_save_suav = tk.Button(frame_filtro, text="Guardar suavizado ", width=17, anchor="w", font=("Arial", 10), command=cmd_guardar_suavizados)
+btn_save_suav = tk.Button(frame_filtro, text="Guardar suavizado ", width=12, anchor="w", font=("Arial", 10), command=cmd_guardar_suavizados)
 btn_save_suav.pack(padx=(5,1), pady=(1,1), fill="x")
 
 # ======================================================================================== botones stats
 
-btn_stats = tk.Button(frame_stats, text="Estadísticos", width=17, anchor="w", font=("Arial", 10), command=cmd_estadisticos)
+btn_stats = tk.Button(frame_stats, text="Estadísticos", width=12, anchor="w", font=("Arial", 10), command=cmd_estadisticos)
 btn_stats.pack(pady=2, padx=5, fill="x")
+
+# ======================================================================================== botones ajuste
+
+combo_ajuste = ttk.Combobox(frame_fit, state="readonly", width=20, font=("Arial", 10))
+combo_ajuste["values"] = [
+    "Ninguno",
+    "Lineal",
+    "Cuadrático",
+    "Cúbico",
+    "Polinomial (grado 4)",
+    "Polinomial (grado 5)",
+    "Exponencial",
+    "Logarítmico",
+    "Potencia"
+]
+combo_ajuste.set("Ninguno")
+combo_ajuste.pack(side="top", fill="x", padx=(5,1))
+
+btn_ajustar = tk.Button(frame_fit, text=" Ajustar", width=12, anchor="w", font=("Arial", 10), command=ajustar_curva)
+btn_ajustar.pack(side="top", fill="x", padx=(5,1), pady=(1,1))
+
+# ======================================================================================== botones limpiar
+
+btn_eliminar = tk.Menubutton(frame_clean, text=" Limpiar", width=12, anchor="w", font=("Arial", 10), relief="raised")
+btn_eliminar.pack(pady=(4, 4), padx=(5,1), fill="x")
+
+menu_eliminar = tk.Menu(btn_eliminar, tearoff=0)
+btn_eliminar.config(menu=menu_eliminar)
+
+menu_eliminar.add_command(label="Quitar ajuste", command=cmd_quitar_ajuste)
+menu_eliminar.add_command(label="Quitar suavizado", command=cmd_quitar_ultimo_suavizado)
+menu_eliminar.add_command(label="Limpiar todo", command=cmd_limpiar)
 
 # ======================================================================================== plot
 
