@@ -1,2 +1,2 @@
 # OPNSpec-V1.0
-Aplicación ejecutable programada en python, conecta un ESP32, dale play y observa datos y su gráfica.
+Conecta un ESP32 a tu computadora, carga el main al ESP32 y obtén datos de tu experimento, aplica filtros y ajusta en un click.
